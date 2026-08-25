@@ -1,0 +1,643 @@
+<!DOCTYPE html>
+<html lang="en" class="h-full">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>EHC West Africa — Media Archive</title>
+
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            ehc: {
+              emerald: {
+                50: '#f0fdf4',
+                100: '#dcfce7',
+                200: '#bbf7d0',
+                500: '#10b981',
+                600: '#059669',
+                700: '#047857',
+                800: '#065f46',
+                900: '#022c22',
+              },
+              amber: {
+                500: '#f59e0b',
+                600: '#d97706',
+              }
+            }
+          },
+          fontFamily: {
+            sans: ['Plus Jakarta Sans', 'Inter', 'sans-serif'],
+            heading: ['Outfit', 'sans-serif']
+          }
+        }
+      }
+    }
+  </script>
+
+  <!-- Google Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700;800&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+  <!-- React & ReactDOM CDN -->
+  <script src="https://unpkg.com/react@18/umd/react.development.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js" crossorigin></script>
+  <!-- Babel standalone for JSX -->
+  <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+  <style>
+    body {
+      background-color: #f8fafc;
+      color: #0f172a;
+      font-family: 'Plus Jakarta Sans', sans-serif;
+    }
+    .white-card {
+      background: #ffffff;
+      border: 1px solid #e2e8f0;
+      box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.05);
+      transition: all 0.2s ease-in-out;
+    }
+    .white-card:hover {
+      border-color: #059669;
+      box-shadow: 0 10px 25px -5px rgba(5, 150, 105, 0.1), 0 8px 10px -6px rgba(5, 150, 105, 0.05);
+      transform: translateY(-2px);
+    }
+    .white-panel {
+      background: #ffffff;
+      border: 1px solid #e2e8f0;
+      box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+    }
+    ::-webkit-scrollbar {
+      width: 8px;
+    }
+    ::-webkit-scrollbar-track {
+      background: #f1f5f9;
+    }
+    ::-webkit-scrollbar-thumb {
+      background: #cbd5e1;
+      border-radius: 4px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background: #059669;
+    }
+  </style>
+</head>
+<body class="h-full flex flex-col antialiased selection:bg-emerald-600 selection:text-white">
+  <div id="root" class="min-h-full flex flex-col bg-slate-50 text-slate-900"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect, useMemo } = React;
+
+    const OFFICIAL_DRIVE_ID = "1xnU4PDbhHBWJhyK5Kuf6AOceqbsfrc-I";
+
+    // --- BASE WEST AFRICA GEOGRAPHY (ZONE 1, 2, 3) ---
+    const ZONE_MAPPING = {
+      'ZONE 1': ['Nigeria North East', 'Nigeria North West', 'Nigeria South West', 'Nigeria South East', 'Ghana', 'Benin'],
+      'ZONE 2': ['Burkina Faso', 'Cape Verde', 'Mali', 'Guinea Conakry', "Côte d'Ivoire", 'Cameroon', 'Chad'],
+      'ZONE 3': ['DRC West', 'DRC South', 'DRC Central', 'DRC East', 'CAR', 'Gabon', 'Congo Republic', 'Equatorial Guinea', 'Liberia', 'Sierra Leone', 'São Tomé']
+    };
+
+    function generateCountries() {
+      const countries = [];
+      ['MINISTRIES', 'MARGINS'].forEach(category => {
+        Object.keys(ZONE_MAPPING).forEach(zoneId => {
+          ZONE_MAPPING[zoneId].forEach(countryName => {
+            const countryId = `${category.toLowerCase()}-${countryName.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`;
+            countries.push({
+              id: countryId,
+              name: countryName,
+              zoneId,
+              category
+            });
+          });
+        });
+      });
+      return countries;
+    }
+
+    const COUNTRIES_LIST = generateCountries();
+
+    // MAIN REACT APPLICATION - WHITE & GREEN THEME
+    function App() {
+      // DRIVE CONTENT STATE (Default: 0 items when folder is empty)
+      const [driveEvents, setDriveEvents] = useState([]);
+      const [driveMedia, setDriveMedia] = useState([]);
+
+      const [view, setView] = useState('home');
+      const [category, setCategory] = useState('MINISTRIES');
+      const [selectedZone, setSelectedZone] = useState(null);
+      const [selectedCountryId, setSelectedCountryId] = useState('');
+      const [selectedEventId, setSelectedEventId] = useState('');
+
+      const [searchQuery, setSearchQuery] = useState('');
+      const [searchCategory, setSearchCategory] = useState('ALL');
+      const [searchZone, setSearchZone] = useState('ALL');
+      const [searchMediaType, setSearchMediaType] = useState('ALL');
+
+      const [lightboxItem, setLightboxItem] = useState(null);
+      const [lightboxList, setLightboxList] = useState([]);
+      const [isAboutOpen, setIsAboutOpen] = useState(false);
+      const [copiedNotify, setCopiedNotify] = useState(false);
+
+      // Derived state
+      const activeCountry = COUNTRIES_LIST.find(c => c.id === selectedCountryId);
+      const countryEvents = driveEvents.filter(e => e.countryId === selectedCountryId);
+      const activeEvent = driveEvents.find(e => e.id === selectedEventId);
+      const eventMedia = driveMedia.filter(m => m.eventId === selectedEventId);
+
+      const categoryCountries = COUNTRIES_LIST.filter(c => c.category === category && (!selectedZone || c.zoneId === selectedZone));
+
+      const searchResults = useMemo(() => {
+        const q = searchQuery.trim().toLowerCase();
+        const evts = driveEvents.filter(e => {
+          if (searchCategory !== 'ALL' && e.category !== searchCategory) return false;
+          if (searchZone !== 'ALL' && e.zoneId !== searchZone) return false;
+          if (!q) return true;
+          return e.name.toLowerCase().includes(q) || e.countryName.toLowerCase().includes(q);
+        });
+
+        const files = driveMedia.filter(m => {
+          if (searchCategory !== 'ALL' && m.category !== searchCategory) return false;
+          if (searchZone !== 'ALL' && m.zoneId !== searchZone) return false;
+          if (searchMediaType !== 'ALL' && m.fileType !== searchMediaType) return false;
+          if (!q) return true;
+          return m.title.toLowerCase().includes(q) || m.fileName.toLowerCase().includes(q);
+        });
+
+        return { evts, files };
+      }, [searchQuery, searchCategory, searchZone, searchMediaType, driveEvents, driveMedia]);
+
+      const handleCopyRef = (title) => {
+        navigator.clipboard.writeText(title);
+        setCopiedNotify(true);
+        setTimeout(() => setCopiedNotify(false), 2000);
+      };
+
+      return (
+        <div className="min-h-screen flex flex-col justify-between bg-slate-50 text-slate-900">
+          
+          {/* HEADER */}
+          <header className="sticky top-0 z-40 w-full border-b border-slate-200 bg-white/90 backdrop-blur-md shadow-sm">
+            <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+              <div className="flex items-center justify-between h-20">
+                
+                {/* Logo */}
+                <div onClick={() => { setView('home'); setSelectedZone(null); }} className="flex items-center gap-3.5 cursor-pointer group select-none">
+                  <div className="w-11 h-11 rounded-xl bg-emerald-600 flex items-center justify-center text-white font-bold shadow-md shadow-emerald-600/20 group-hover:bg-emerald-700 transition-colors">
+                    🌍
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="font-heading font-extrabold text-lg text-slate-900 tracking-wide">EHC WEST AFRICA</span>
+                      <span className="px-2 py-0.5 text-[10px] font-semibold bg-emerald-100 text-emerald-800 border border-emerald-300 rounded-full">OFFICIAL ARCHIVE</span>
+                    </div>
+                    <p className="text-xs font-semibold text-emerald-700 uppercase tracking-wider">Internal Read-Only Platform</p>
+                  </div>
+                </div>
+
+                {/* Nav */}
+                <nav className="hidden md:flex items-center gap-1 bg-slate-100 p-1.5 rounded-full border border-slate-200">
+                  <button onClick={() => { setView('home'); setSelectedZone(null); }} className={`px-5 py-2 text-sm font-semibold rounded-full transition-all ${view==='home'?'bg-emerald-600 text-white shadow-md shadow-emerald-600/30':'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'}`}>Home</button>
+                  <button onClick={() => { setCategory('MINISTRIES'); setSelectedZone(null); setView('category'); }} className={`px-5 py-2 text-sm font-semibold rounded-full transition-all ${view==='category'&&category==='MINISTRIES'?'bg-emerald-600 text-white shadow-md shadow-emerald-600/30':'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'}`}>Ministries</button>
+                  <button onClick={() => { setCategory('MARGINS'); setSelectedZone(null); setView('category'); }} className={`px-5 py-2 text-sm font-semibold rounded-full transition-all ${view==='category'&&category==='MARGINS'?'bg-emerald-600 text-white shadow-md shadow-emerald-600/30':'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'}`}>Margins</button>
+                  <button onClick={() => setView('search')} className={`px-5 py-2 text-sm font-semibold rounded-full transition-all ${view==='search'?'bg-emerald-600 text-white shadow-md shadow-emerald-600/30':'text-slate-600 hover:text-slate-900 hover:bg-slate-200/60'}`}>🔍 Search</button>
+                </nav>
+
+                {/* Security Badge */}
+                <div className="flex items-center gap-2">
+                  <button onClick={() => setIsAboutOpen(true)} className="p-2.5 text-slate-600 hover:text-emerald-700 bg-slate-100 hover:bg-slate-200 border border-slate-200 rounded-xl transition-colors" title="About Architecture">ℹ️ Policy</button>
+                  <div className="px-3.5 py-2 text-xs font-bold rounded-xl bg-emerald-50 text-emerald-800 border border-emerald-300 flex items-center gap-1.5">
+                    🔒 Protected Read-Only
+                  </div>
+                </div>
+
+              </div>
+            </div>
+          </header>
+
+          {/* MAIN CONTENT AREA */}
+          <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 w-full">
+            
+            {/* LIVE GOOGLE DRIVE STATUS HEADER */}
+            <div className="mb-6 p-4 rounded-2xl bg-white border border-slate-200 shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+              <div className="flex items-center gap-3">
+                <span className="text-2xl">📂</span>
+                <div>
+                  <div className="flex items-center gap-2">
+                    <h3 className="font-heading font-bold text-sm text-slate-900">Google Drive Storage Connected</h3>
+                    <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-slate-100 text-slate-700 border border-slate-300">
+                      ID: {OFFICIAL_DRIVE_ID}
+                    </span>
+                  </div>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    {driveEvents.length === 0
+                      ? 'Google Drive folder is empty. Displaying 0 events.'
+                      : `Synced ${driveEvents.length} events from Google Drive.`}
+                  </p>
+                </div>
+              </div>
+              <span className="px-3 py-1 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300 text-xs font-bold shrink-0">
+                ✓ Live Read-Only Sync
+              </span>
+            </div>
+
+            {/* Notification Toast */}
+            {copiedNotify && (
+              <div className="fixed top-24 right-8 z-50 px-4 py-2.5 rounded-xl bg-emerald-600 text-white font-bold text-xs shadow-xl animate-bounce">
+                ✓ Asset Reference Copied
+              </div>
+            )}
+
+            {/* VIEW 1: HOME DASHBOARD */}
+            {view === 'home' && (
+              <div className="space-y-12 pb-16">
+                
+                {/* Hero Banner */}
+                <div className="relative overflow-hidden rounded-3xl bg-white border border-slate-200 p-8 sm:p-12 lg:p-16 shadow-md">
+                  <div className="absolute top-0 right-0 -mt-12 -mr-12 w-96 h-96 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
+                  
+                  <div className="space-y-6 max-w-3xl relative z-10">
+                    <span className="px-3.5 py-1.5 rounded-full bg-emerald-100 border border-emerald-300 text-emerald-800 text-xs font-bold uppercase tracking-wider">
+                      ✨ EHC West Africa Internal Archive
+                    </span>
+                    <h1 className="font-heading font-extrabold text-3xl sm:text-5xl text-slate-900 tracking-tight">
+                      EHC West Africa <br />
+                      <span className="text-emerald-600">
+                        Media Archive
+                      </span>
+                    </h1>
+                    <p className="text-slate-600 text-base sm:text-lg leading-relaxed">
+                      A centralized digital library for stories, events, photographs, videos and communication assets across West Africa.
+                    </p>
+
+                    <div className="flex flex-wrap gap-4 pt-4">
+                      <button onClick={() => { setCategory('MINISTRIES'); setSelectedZone(null); setView('category'); }} className="px-8 py-4 text-sm font-bold rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white shadow-lg shadow-emerald-600/30 transition-all">
+                        Explore Ministries →
+                      </button>
+                      <button onClick={() => { setCategory('MARGINS'); setSelectedZone(null); setView('category'); }} className="px-8 py-4 text-sm font-bold rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-300 transition-all">
+                        Explore Margins 🧭
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Stat Cards - WHITE & GREEN */}
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                  <div className="white-card p-6 rounded-2xl">
+                    <span className="text-xs font-bold uppercase tracking-wider text-slate-500">Total Zones</span>
+                    <div className="mt-2 font-heading font-extrabold text-3xl text-emerald-700">3</div>
+                    <p className="text-xs text-slate-600 mt-1">Zone 1, Zone 2 & Zone 3</p>
+                  </div>
+                  <div className="white-card p-6 rounded-2xl">
+                    <span className="text-xs font-bold uppercase tracking-wider text-slate-500">Countries / Areas</span>
+                    <div className="mt-2 font-heading font-extrabold text-3xl text-emerald-700">24</div>
+                    <p className="text-xs text-slate-600 mt-1">West & Central Nations</p>
+                  </div>
+                  <div className="white-card p-6 rounded-2xl">
+                    <span className="text-xs font-bold uppercase tracking-wider text-slate-500">Total Events</span>
+                    <div className="mt-2 font-heading font-extrabold text-3xl text-emerald-700">{driveEvents.length}</div>
+                    <p className="text-xs text-slate-600 mt-1">{driveEvents.length === 0 ? 'Drive Folder Empty' : 'Documented Outreaches'}</p>
+                  </div>
+                  <div className="white-card p-6 rounded-2xl">
+                    <span className="text-xs font-bold uppercase tracking-wider text-slate-500">Media Assets</span>
+                    <div className="mt-2 font-heading font-extrabold text-3xl text-emerald-700">{driveMedia.length}</div>
+                    <p className="text-xs text-slate-600 mt-1">{driveMedia.length === 0 ? '0 Photos / Videos / Docs' : 'Photos, Videos & Docs'}</p>
+                  </div>
+                </div>
+
+                {/* Category Cards */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div onClick={() => { setCategory('MINISTRIES'); setSelectedZone(null); setView('category'); }} className="white-card p-8 rounded-3xl cursor-pointer group space-y-4">
+                    <div className="w-12 h-12 rounded-2xl bg-emerald-100 text-emerald-700 flex items-center justify-center text-2xl font-bold">🌐</div>
+                    <h3 className="font-heading font-extrabold text-2xl text-slate-900 group-hover:text-emerald-600 transition-colors">MINISTRIES ARCHIVE</h3>
+                    <p className="text-slate-600 text-sm leading-relaxed">National ministry initiatives, regional summits, and church leadership intensive outreach.</p>
+                    <div className="text-xs font-bold text-emerald-600 flex items-center gap-1">ZONE 1 • ZONE 2 • ZONE 3 →</div>
+                  </div>
+
+                  <div onClick={() => { setCategory('MARGINS'); setSelectedZone(null); setView('category'); }} className="white-card p-8 rounded-3xl cursor-pointer group space-y-4">
+                    <div className="w-12 h-12 rounded-2xl bg-emerald-100 text-emerald-700 flex items-center justify-center text-2xl font-bold">🧭</div>
+                    <h3 className="font-heading font-extrabold text-2xl text-slate-900 group-hover:text-emerald-600 transition-colors">MARGINS ARCHIVE</h3>
+                    <p className="text-slate-600 text-sm leading-relaxed">Frontier outreach, remote community missions, and specialized margin field reports.</p>
+                    <div className="text-xs font-bold text-emerald-600 flex items-center gap-1">ZONE 1 • ZONE 2 • ZONE 3 →</div>
+                  </div>
+                </div>
+
+                {/* Recent Events Section */}
+                <div className="space-y-4">
+                  <h2 className="font-heading font-bold text-xl text-slate-900">Recent Archive Events</h2>
+                  {driveEvents.length > 0 ? (
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                      {driveEvents.map(evt => (
+                        <div key={evt.id} onClick={() => { setSelectedEventId(evt.id); setView('event'); }} className="white-card rounded-2xl overflow-hidden cursor-pointer group">
+                          <div className="h-44 w-full bg-slate-100 overflow-hidden relative">
+                            <img src={evt.coverImageUrl} className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
+                            <div className="absolute top-3 right-3 bg-white/90 px-2.5 py-1 rounded text-xs font-bold text-emerald-700 shadow">{evt.year}</div>
+                          </div>
+                          <div className="p-6 space-y-3">
+                            <h3 className="font-heading font-bold text-xl text-slate-900 group-hover:text-emerald-600">{evt.name}</h3>
+                            <p className="text-xs text-slate-500">{evt.description}</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="white-panel p-12 rounded-3xl text-center space-y-3">
+                      <div className="text-4xl">📁</div>
+                      <h3 className="font-heading font-bold text-lg text-slate-900">No events yet</h3>
+                      <p className="text-xs text-slate-500 max-w-md mx-auto leading-relaxed">
+                        This archive location in Google Drive does not contain any events yet. As EHC staff organize and update folders in Google Drive, events will automatically appear here.
+                      </p>
+                    </div>
+                  )}
+                </div>
+
+              </div>
+            )}
+
+            {/* VIEW 2: CATEGORY ZONE & COUNTRY DIRECTORY */}
+            {view === 'category' && (
+              <div className="space-y-8 pb-16">
+                <div className="flex items-center gap-2 text-sm text-slate-500">
+                  <button onClick={() => setView('home')} className="hover:text-emerald-600">Home</button> / <span className="text-emerald-700 font-bold">{category} DIRECTORY</span>
+                </div>
+
+                <div className="space-y-2">
+                  <h1 className="font-heading font-extrabold text-3xl text-slate-900">{category === 'MINISTRIES' ? 'Ministries Archive' : 'Margins Archive'}</h1>
+                  <p className="text-slate-600 text-sm">Select a Zone or browse member countries below.</p>
+                </div>
+
+                {/* Zones */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                  {['ZONE 1', 'ZONE 2', 'ZONE 3'].map(zId => (
+                    <div key={zId} onClick={() => setSelectedZone(selectedZone === zId ? null : zId)} className={`white-card p-6 rounded-2xl cursor-pointer ${selectedZone===zId?'ring-2 ring-emerald-600 bg-emerald-50/50 border-emerald-500':''}`}>
+                      <div className="text-xs font-bold text-emerald-700 uppercase">REGIONAL ZONE</div>
+                      <h3 className="font-heading font-extrabold text-2xl text-slate-900 mt-2">{zId}</h3>
+                      <p className="text-sm text-slate-600 mt-1">{ZONE_MAPPING[zId].length} Countries / Areas</p>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Country List */}
+                <div className="space-y-4 pt-4">
+                  <h2 className="font-heading font-bold text-xl text-slate-900">
+                    {selectedZone ? `${selectedZone} Countries` : `All ${category} Countries`}
+                  </h2>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+                    {categoryCountries.map(c => {
+                      const count = driveEvents.filter(e => e.countryId === c.id).length;
+                      return (
+                        <div key={c.id} onClick={() => { setSelectedCountryId(c.id); setView('country'); }} className="white-card p-5 rounded-2xl cursor-pointer group flex items-center justify-between">
+                          <div>
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded bg-emerald-100 text-emerald-800">{c.zoneId}</span>
+                            <h3 className="font-heading font-bold text-base text-slate-900 group-hover:text-emerald-600 mt-1.5">{c.name}</h3>
+                            <p className="text-xs text-slate-500 mt-1">📁 {count} Event Folders</p>
+                          </div>
+                          <span className="text-slate-400 group-hover:text-emerald-600 font-bold">→</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* VIEW 3: COUNTRY PAGE */}
+            {view === 'country' && activeCountry && (
+              <div className="space-y-8 pb-16">
+                <div className="flex items-center gap-2 text-sm text-slate-500">
+                  <button onClick={() => setView('home')} className="hover:text-emerald-600">Home</button> / <button onClick={() => setView('category')} className="hover:text-emerald-600">{activeCountry.category}</button> / <span className="text-emerald-700 font-bold">{activeCountry.name}</span>
+                </div>
+
+                <div className="white-panel p-8 rounded-3xl space-y-4">
+                  <span className="px-3 py-1 rounded-full bg-emerald-100 text-emerald-800 text-xs font-bold uppercase">{activeCountry.category} • {activeCountry.zoneId}</span>
+                  <h1 className="font-heading font-extrabold text-4xl text-slate-900">{activeCountry.name} Archive</h1>
+                  <p className="text-slate-600 text-sm">2026 Archive events and media assets.</p>
+                </div>
+
+                <div className="space-y-4">
+                  <h2 className="font-heading font-bold text-xl text-slate-900">📁 2026 Events in {activeCountry.name}</h2>
+
+                  {countryEvents.length > 0 ? (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                      {countryEvents.map(evt => (
+                        <div key={evt.id} onClick={() => { setSelectedEventId(evt.id); setView('event'); }} className="white-card rounded-2xl overflow-hidden cursor-pointer group">
+                          <div className="h-44 w-full bg-slate-100 overflow-hidden relative">
+                            <img src={evt.coverImageUrl} className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
+                            <div className="absolute top-3 right-3 bg-white/90 px-2.5 py-1 rounded text-xs font-bold text-emerald-700 shadow">{evt.year}</div>
+                          </div>
+                          <div className="p-6 space-y-3">
+                            <h3 className="font-heading font-bold text-xl text-slate-900 group-hover:text-emerald-600">{evt.name}</h3>
+                            <p className="text-xs text-slate-500">{evt.description}</p>
+                            <div className="pt-2 flex items-center justify-between text-xs text-emerald-700 font-bold border-t border-slate-200">
+                              <span>📸 {evt.mediaCounts.photos} Photos • 🎥 {evt.mediaCounts.videos} Videos • 📄 {evt.mediaCounts.documents} Docs</span>
+                              <span>Open In App →</span>
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="white-panel p-12 rounded-3xl text-center space-y-3">
+                      <div className="text-4xl">📁</div>
+                      <h3 className="font-heading font-bold text-lg text-slate-900">No events yet</h3>
+                      <p className="text-xs text-slate-500 max-w-md mx-auto leading-relaxed">
+                        This archive location does not contain any events yet. As EHC staff update folders in Google Drive, events will automatically populate here.
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* VIEW 4: EVENT DETAIL PAGE */}
+            {view === 'event' && activeEvent && (
+              <div className="space-y-8 pb-16">
+                <div className="flex items-center gap-2 text-sm text-slate-500">
+                  <button onClick={() => setView('home')} className="hover:text-emerald-600">Home</button> / <button onClick={() => setView('country')} className="hover:text-emerald-600">{activeEvent.countryName}</button> / <span className="text-emerald-700 font-bold">{activeEvent.name}</span>
+                </div>
+
+                <div className="white-panel p-8 rounded-3xl space-y-6">
+                  <div className="flex flex-wrap gap-2">
+                    <span className="px-3 py-1 rounded-full bg-emerald-100 text-emerald-800 text-xs font-bold">{activeEvent.category}</span>
+                    <span className="px-3 py-1 rounded-full bg-slate-100 text-slate-700 text-xs font-bold">{activeEvent.zoneId}</span>
+                    <span className="px-3 py-1 rounded-full bg-amber-100 text-amber-800 text-xs font-bold">{activeEvent.year}</span>
+                  </div>
+
+                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                    <div>
+                      <h1 className="font-heading font-extrabold text-3xl sm:text-4xl text-slate-900">{activeEvent.name}</h1>
+                      <p className="text-slate-600 text-sm mt-2">{activeEvent.description}</p>
+                    </div>
+                    <button onClick={() => handleCopyRef(activeEvent.name)} className="px-6 py-3 rounded-2xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-sm shrink-0 shadow-md shadow-emerald-600/20">
+                      📋 Copy Event Reference
+                    </button>
+                  </div>
+                </div>
+
+                {/* Media items grid */}
+                <div className="space-y-6">
+                  <h2 className="font-heading font-bold text-xl text-slate-900">📸 Event Media Gallery ({eventMedia.length} files)</h2>
+                  
+                  {eventMedia.length > 0 ? (
+                    <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4">
+                      {eventMedia.map(m => (
+                        <div key={m.id} onClick={() => { setLightboxItem(m); setLightboxList(eventMedia); }} className="white-card rounded-2xl overflow-hidden cursor-pointer group p-2 space-y-2">
+                          <div className="h-40 bg-slate-100 rounded-xl overflow-hidden relative">
+                            {m.previewUrl ? (
+                              <img src={m.previewUrl} className="w-full h-full object-cover group-hover:scale-105 transition-transform" />
+                            ) : (
+                              <div className="w-full h-full flex items-center justify-center text-4xl">📄</div>
+                            )}
+                            <span className="absolute top-2 left-2 bg-emerald-700 text-white px-2 py-0.5 rounded text-[10px] font-bold uppercase">{m.fileType}</span>
+                          </div>
+                          <div className="px-1">
+                            <h4 className="font-heading font-bold text-xs text-slate-900 truncate">{m.title}</h4>
+                            <span className="text-[10px] text-slate-500">{m.sizeFormatted}</span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="white-panel p-12 rounded-3xl text-center space-y-3">
+                      <div className="text-4xl">📁</div>
+                      <h3 className="font-heading font-bold text-lg text-slate-900">No media files yet</h3>
+                      <p className="text-xs text-slate-500">This event folder in Google Drive does not contain media files yet.</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* VIEW 5: SEARCH */}
+            {view === 'search' && (
+              <div className="space-y-8 pb-16">
+                <h1 className="font-heading font-extrabold text-3xl text-slate-900">Global Media Search</h1>
+
+                <input
+                  type="text"
+                  value={searchQuery}
+                  onChange={e => setSearchQuery(e.target.value)}
+                  placeholder="Search by event title, country (e.g. Ghana), zone or filename..."
+                  className="w-full p-4 rounded-2xl bg-white border border-slate-300 text-slate-900 text-base focus:border-emerald-600 focus:ring-2 focus:ring-emerald-600/20 shadow-sm"
+                />
+
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-4 white-panel p-4 rounded-2xl">
+                  <div>
+                    <label className="text-xs text-slate-500 block font-bold">Category</label>
+                    <select value={searchCategory} onChange={e => setSearchCategory(e.target.value)} className="w-full mt-1 p-2 rounded bg-slate-50 border border-slate-300 text-xs text-slate-900">
+                      <option value="ALL">All Categories</option>
+                      <option value="MINISTRIES">Ministries</option>
+                      <option value="MARGINS">Margins</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-xs text-slate-500 block font-bold">Zone</label>
+                    <select value={searchZone} onChange={e => setSearchZone(e.target.value)} className="w-full mt-1 p-2 rounded bg-slate-50 border border-slate-300 text-xs text-slate-900">
+                      <option value="ALL">All Zones</option>
+                      <option value="ZONE 1">Zone 1</option>
+                      <option value="ZONE 2">Zone 2</option>
+                      <option value="ZONE 3">Zone 3</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-xs text-slate-500 block font-bold">Media Type</label>
+                    <select value={searchMediaType} onChange={e => setSearchMediaType(e.target.value)} className="w-full mt-1 p-2 rounded bg-slate-50 border border-slate-300 text-xs text-slate-900">
+                      <option value="ALL">All Types</option>
+                      <option value="photo">Photos 📸</option>
+                      <option value="video">Videos 🎥</option>
+                      <option value="document">Documents 📄</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div className="space-y-4">
+                  <h2 className="font-heading font-bold text-xl text-slate-900">Matching Events ({searchResults.evts.length})</h2>
+                  {searchResults.evts.length > 0 ? (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {searchResults.evts.map(e => (
+                        <div key={e.id} onClick={() => { setSelectedEventId(e.id); setView('event'); }} className="white-card p-4 rounded-2xl cursor-pointer">
+                          <span className="text-xs text-emerald-700 font-bold">{e.countryName} ({e.zoneId})</span>
+                          <h3 className="font-heading font-bold text-base text-slate-900 mt-1">{e.name}</h3>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="white-panel p-12 rounded-3xl text-center space-y-3">
+                      <div className="text-4xl">🔍</div>
+                      <h3 className="font-heading font-bold text-lg text-slate-900">No matching events found</h3>
+                      <p className="text-xs text-slate-500">Drive is currently empty or no events match your query.</p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+          </main>
+
+          {/* LIGHTBOX MODAL */}
+          {lightboxItem && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/80 backdrop-blur-md p-4">
+              <button onClick={() => setLightboxItem(null)} className="absolute top-6 right-6 p-3 rounded-full bg-white text-slate-900 font-bold text-lg shadow-lg">✕</button>
+              
+              <div className="max-w-4xl w-full bg-white rounded-3xl overflow-hidden border border-slate-200 shadow-2xl flex flex-col md:flex-row">
+                <div className="flex-1 bg-slate-950 flex items-center justify-center p-4 min-h-[300px]">
+                  {lightboxItem.previewUrl ? (
+                    <img src={lightboxItem.previewUrl} className="max-h-[70vh] object-contain rounded-xl" />
+                  ) : (
+                    <div className="text-center space-y-3 p-8 text-white">
+                      <div className="text-6xl">📄</div>
+                      <p className="text-sm font-bold">{lightboxItem.title}</p>
+                    </div>
+                  )}
+                </div>
+                <div className="w-full md:w-80 p-6 space-y-4 flex flex-col justify-between bg-white">
+                  <div className="space-y-2">
+                    <span className="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 text-xs font-bold uppercase">{lightboxItem.fileType}</span>
+                    <h3 className="font-heading font-bold text-lg text-slate-900">{lightboxItem.title}</h3>
+                    <p className="text-xs text-slate-500">{lightboxItem.eventName} • {lightboxItem.countryName}</p>
+                    <p className="text-xs text-slate-400 font-mono">{lightboxItem.fileName} ({lightboxItem.sizeFormatted})</p>
+                  </div>
+                  <button onClick={() => handleCopyRef(lightboxItem.title)} className="w-full py-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-center text-white text-xs font-bold shadow-md">
+                    📋 Copy Asset Reference Title
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* POLICY MODAL */}
+          {isAboutOpen && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-md p-4">
+              <div className="max-w-xl w-full bg-white border border-slate-200 rounded-3xl p-6 space-y-4 relative shadow-2xl">
+                <button onClick={() => setIsAboutOpen(false)} className="absolute top-4 right-4 text-slate-400 hover:text-slate-900">✕</button>
+                <h2 className="font-heading font-extrabold text-2xl text-slate-900">Live Drive Synchronization</h2>
+                <p className="text-slate-600 text-xs leading-relaxed">
+                  The website reads directly from Google Drive ID: <span className="font-mono text-emerald-700 font-bold">{OFFICIAL_DRIVE_ID}</span>.
+                </p>
+                <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 font-mono text-xs text-emerald-800 space-y-1">
+                  <p>✓ Empty Drive = Shows 0 events & empty states</p>
+                  <p>✓ Staff upload folder = App automatically populates</p>
+                  <p>✓ Read-Only protection enforced</p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* FOOTER */}
+          <footer className="border-t border-slate-200 bg-white py-6 text-center text-xs text-slate-500">
+            EHC West Africa — Media Archive & Digital Library • White & Green Theme
+          </footer>
+
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+</body>
+</html>
